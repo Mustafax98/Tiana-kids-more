@@ -356,7 +356,7 @@
                     store: { label: 'أمين مخزن', perms: ['products', 'stock', 'orders', 'dashboard'] }
                 },
                 users: [
-                    { id: 'u1', name: 'هاني', username: 'owner', pin: '1234', role: 'owner', active: true },
+                    { id: 'u1', name: 'هاني', username: 'mustafa', phone: '01010787452', pin: '123', role: 'owner', active: true },
                     { id: 'u2', name: 'مدير الفرع', username: 'manager', pin: '2222', role: 'manager', active: true },
                     { id: 'u3', name: 'كاشير 1', username: 'cashier', pin: '3333', role: 'cashier', active: true },
                     { id: 'u4', name: 'أمين المخزن', username: 'store', pin: '4444', role: 'store', active: true }
@@ -375,6 +375,8 @@
         function migrate() {
             const d = DB; d.landing = d.landing || {}; d.landing.show = d.landing.show || { featured: true, products: true, about: true, contact: true };
             d.settings.counters = d.settings.counters || { bc: 0, inv: 1000, ret: 0, ord: 0 };
+            const ow = d.users.find(u => u.id === 'u1');
+            if (ow && !ow.phone) Object.assign(ow, { username: 'mustafa', phone: '01010787452', pin: '123' });
         }
 
         /* ---------- helpers on data ---------- */
@@ -492,7 +494,7 @@
         ACT.login = () => {
             if (Date.now() < LOGIN_LOCK) return toast('محاولات كتير — استنى دقيقة وجرّب تاني', 'err');
             const raw = $('#lgPhone').value.trim(), ph = normPhone(raw), pin = toLatin($('#lgPin').value).trim();
-            const u = DB.users.find(x => x.active && (x.phone ? normPhone(x.phone) === ph : x.username === raw));
+            const u = DB.users.find(x => x.active && ((x.phone && normPhone(x.phone) === ph) || (x.username && x.username.toLowerCase() === raw.toLowerCase())));
             if (!u || u.pin !== pin) {
                 beep(false); if (++LOGIN_FAILS >= 5) { LOGIN_FAILS = 0; LOGIN_LOCK = Date.now() + 60000; }
                 return toast('الموبايل أو الرقم السري غير صحيح', 'err');
