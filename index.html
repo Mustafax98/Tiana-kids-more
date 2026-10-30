@@ -477,7 +477,7 @@
             $('#loginView').innerHTML = `<div class="min-h-full flex items-center justify-center p-4"><div class="card w-full max-w-md p-7">
     <div class="flex justify-center mb-2">${logoHTML('h-24')}</div>
     <p class="text-center text-xs text-stone-500 mb-6">سجل الدخول للمتابعة</p>
-    <label class="lbl">رقم الموبايل أو اسم المستخدم</label>
+    <label class="lbl">تسجيل الدخول</label>
     <input id="lgPhone" class="inp mb-3" inputmode="tel" dir="ltr" placeholder="01xxxxxxxxx" data-enter="login">    <label class="lbl">الرقم السري (PIN)</label>
     <input id="lgPin" type="password" inputmode="numeric" class="inp mb-4" placeholder="••••" data-enter="login">
     <button data-action="login" class="btn btn-primary w-full !py-3">دخول</button>
@@ -493,11 +493,12 @@
         let LOGIN_FAILS = 0, LOGIN_LOCK = 0;
         ACT.login = () => {
             if (Date.now() < LOGIN_LOCK) return toast('محاولات كتير — استنى دقيقة وجرّب تاني', 'err');
-            const raw = $('#lgPhone').value.trim(), ph = normPhone(raw), pin = toLatin($('#lgPin').value).trim();
-            const u = DB.users.find(x => x.active && ((x.phone && normPhone(x.phone) === ph) || (x.username && x.username.toLowerCase() === raw.toLowerCase())));
+            const norm = s => toLatin(s).trim().toLowerCase();
+            const raw = norm($('#lgPhone').value), pin = toLatin($('#lgPin').value).trim();
+            const u = DB.users.find(x => x.active && raw && (norm(x.username) === raw || (x.phone && norm(x.phone) === raw)));
             if (!u || u.pin !== pin) {
                 beep(false); if (++LOGIN_FAILS >= 5) { LOGIN_FAILS = 0; LOGIN_LOCK = Date.now() + 60000; }
-                return toast('الموبايل أو الرقم السري غير صحيح', 'err');
+                return toast('المعرّف أو الرقم السري غير صحيح', 'err');
             }
             LOGIN_FAILS = 0; USER = u; sessionStorage.setItem('tiana_u', u.id); enterApp();
         };
@@ -1148,21 +1149,18 @@
         ACT.roleDel = t => { const r = t.dataset.r; if (DB.users.some(u => u.role === r)) return toast('الدور مستخدم — غيّري دور المستخدمين أولاً', 'warn'); if (!confirm('حذف الدور؟')) return; delete DB.roles[r]; save(); renderView(); };
         ACT.userEdit = t => {
             const u = t.dataset.id ? DB.users.find(x => x.id === t.dataset.id) : { id: '', name: '', username: '', phone: '', pin: '', role: 'cashier', active: true };
-            modal(u.id ? 'تعديل مستخدم' : 'مستخدم جديد', `<div class="grid sm:grid-cols-2 gap-3"><div><label class="lbl">الاسم *</label><input id="us_name" class="inp" value="${esc(u.name)}"></div><div><label class="lbl">رقم الموبايل (للدخول) *</label><input id="us_phone" class="inp" inputmode="tel" dir="ltr" value="${esc(u.phone || '')}"></div><div><label class="lbl">اسم المستخدم (اختياري)</label><input id="us_user" class="inp" value="${esc(u.username)}"></div>
+            modal(u.id ? 'تعديل مستخدم' : 'مستخدم جديد', `<div class="grid sm:grid-cols-2 gap-3"><div><label class="lbl">معرّف الدخول (رقم / ID / يوزر) *</label><input id="us_user" class="inp" dir="ltr" value="${esc(u.username)}"></div>
     <div><label class="lbl">الدور</label><select id="us_role" class="inp">${Object.entries(DB.roles).map(([k, r]) => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div><div><label class="lbl">الرقم السري (4 أرقام على الأقل) *</label><input id="us_pin" class="inp" inputmode="numeric" value="${esc(u.pin)}"></div>
     <label class="flex items-center gap-2 text-sm">${toggle(u.active, 'id="us_act"')} حساب نشط</label></div>`, { size: 'md', footer: `<button class="btn btn-primary" data-action="userSave" data-id="${u.id}">حفظ</button>` });
         };
         ACT.userSave = t => {
-            const g = id => $('#' + id).value.trim(), id = t.dataset.id, name = g('us_name'), phone = normPhone(g('us_phone')), pin = toLatin(g('us_pin'));
-            const un = g('us_user') || phone;
-            if (!name) return toast('أكملي الاسم', 'err');
-            if (!/^01\d{9}$/.test(phone)) return toast('رقم الموبايل غير صحيح (11 رقم يبدأ بـ 01)', 'err');
+            const g = id => $('#' + id).value.trim(), id = t.dataset.id, name = g('us_name'), un = toLatin(g('us_user')), pin = toLatin(g('us_pin'));
+            if (!name || !un) return toast('أكمل الاسم ومعرّف الدخول', 'err');
             if (!/^\d{4,}$/.test(pin)) return toast('الرقم السري 4 أرقام على الأقل', 'err');
-            if (DB.users.some(u => u.id !== id && u.phone && normPhone(u.phone) === phone)) return toast('الرقم مسجل لمستخدم آخر', 'err');
-            if (DB.users.some(u => u.id !== id && u.username === un)) return toast('اسم المستخدم مستخدم بالفعل', 'err');
+            if (DB.users.some(u => u.id !== id && (u.username || '').toLowerCase() === un.toLowerCase())) return toast('المعرّف مستخدم بالفعل', 'err');
             const act = $('#us_act').checked, role = g('us_role');
-            if (id) { const u = DB.users.find(x => x.id === id); if (u.role === 'owner' && (role !== 'owner' || !act) && DB.users.filter(x => x.role === 'owner' && x.active).length <= 1) return toast('لازم يبقى مالك نشط واحد على الأقل', 'err'); Object.assign(u, { name, username: un, phone, pin, role, active: act }); if (u.id === USER.id) USER = u; }
-            else DB.users.push({ id: 'u' + uid(), name, username: un, phone, pin, role, active: act });
+            if (id) { const u = DB.users.find(x => x.id === id); if (u.role === 'owner' && (role !== 'owner' || !act) && DB.users.filter(x => x.role === 'owner' && x.active).length <= 1) return toast('لازم يبقى مالك نشط واحد على الأقل', 'err'); Object.assign(u, { name, username: un, pin, role, active: act }); if (u.id === USER.id) USER = u; }
+            else DB.users.push({ id: 'u' + uid(), name, username: un, pin, role, active: act });
             save(); closeTopModal(); renderSide(); renderView(); toast('تم الحفظ');
         };
         ACT.userDel = t => { const u = DB.users.find(x => x.id === t.dataset.id); if (u.role === 'owner' && DB.users.filter(x => x.role === 'owner').length <= 1) return toast('لا يمكن حذف المالك الوحيد', 'err'); if (!confirm('حذف المستخدم ' + u.name + '؟')) return; DB.users = DB.users.filter(x => x !== u); save(); renderView(); };
@@ -1444,7 +1442,7 @@
         function xlSave(ws, name) { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Products'); XLSX.writeFile(wb, name); }
         ACT.xlExport = () => {
             if (!can('cost')) return toast('التصدير بيحتاج صلاحية رؤية التكلفة', 'err');
-            const list = []; DB.products.forEach(p => p.variants.forEach(v => list.push({ sku: v.sku || '', style: v.style || p.style || '', name: p.name,seg: v.seg || p.cat, color: v.color, size: v.size, qty: v.qty, cost: p.cost, price: p.price, barcode: v.barcode, note: v.note || '' })));
+            const list = []; DB.products.forEach(p => p.variants.forEach(v => list.push({ sku: v.sku || '', style: v.style || p.style || '', name: p.name, seg: v.seg || p.cat, color: v.color, size: v.size, qty: v.qty, cost: p.cost, price: p.price, barcode: v.barcode, note: v.note || '' })));
             if (!list.length) return toast('مفيش منتجات للتصدير', 'warn');
             xlSave(xlSheet(list), 'tiana-products-' + ymd(new Date()) + '.xlsx');
         };
@@ -1586,7 +1584,7 @@
         }
         ACT.fbSignIn = async () => {
             try { await firebase.auth().signInWithEmailAndPassword($('#fbEmail').value.trim(), $('#fbPass').value); }
-            catch (e) { toast('بيانات الدخول غير صحيحة', 'err'); }
+            catch (e) { console.error(e); toast('تعذر الدخول: ' + (e.code || e.message), 'err'); }
         }; async function init() {
             $('#loginView').classList.remove('hidden');
             $('#loginView').innerHTML = '<div class="min-h-full flex items-center justify-center text-stone-500 font-bold p-10">جاري التحميل من Firebase…</div>';
