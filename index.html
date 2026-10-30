@@ -839,7 +839,7 @@
             return `<div class="card overflow-x-auto"><table class="w-full min-w-[720px]"><thead><tr><th class="th">المنتج</th><th class="th">المقاس / اللون</th><th class="th">الباركود</th><th class="th">الرصيد</th><th class="th">الحالة</th><th class="th"></th></tr></thead><tbody>
   ${rows.map(([p, v]) => {
                 const stt = v.qty <= 0 ? ['نفد', 'bg-red-100 text-red-600'] : v.qty <= p.minStock ? ['ناقص', 'bg-amber-100 text-amber-700'] : ['متوفر', 'bg-emerald-100 text-emerald-700'];
-                return `<tr class="hover:bg-sand/10"><td class="td font-bold">${esc(p.name)}</td><td class="td">${esc(vlabel(v))}</td><td class="td font-mono text-xs">${esc(v.barcode)}</td><td class="td font-extrabold">${v.qty}</td><td class="td"><span class="badge ${stt[1]}">${stt[0]}</span></td>
+                return `<tr class="hover:bg-sand/10"><td class="td font-bold">${esc(p.name)}<div class="text-[11px] text-stone-400 font-mono">${esc(v.sku || '')} ${esc(v.style || '')}</div></td><td class="td">${esc(vlabel(v))}</td><td class="td font-mono text-xs">${esc(v.barcode)}</td><td class="td font-extrabold">${v.qty}</td><td class="td"><span class="badge ${stt[1]}">${stt[0]}</span></td>
     <td class="td"><div class="flex gap-1 justify-end"><button class="btn btn-soft btn-sm" data-action="stockRecv" data-vid="${v.id}">＋ استلام</button><button class="btn btn-soft btn-sm" data-action="stockAdj" data-vid="${v.id}">تسوية</button></div></td></tr>`;
             }).join('') || `<tr><td colspan="6">${empty('لا توجد أصناف')}</td></tr>`}</tbody></table></div>`;
         }
@@ -1344,7 +1344,9 @@
 
         async function xlRead(file) {
             const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-            const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '', blankrows: true });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '', blankrows: true });
+            const aoaW = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '', blankrows: true }); // النص زي ما هو ظاهر في إكسل
             const has = (ks, f) => XL_MAP[f].some(a => ks.includes(a));
             const hi = aoa.findIndex(r => { const ks = r.map(xlNorm); return has(ks, 'name') && has(ks, 'qty'); });
             if (hi < 0) throw new Error('مش لاقي صف العناوين — لازم يكون فيه عمودين على الأقل: Product و Qty');
@@ -1352,9 +1354,11 @@
             const g = (r, f) => col[f] === undefined ? '' : r[col[f]];
             const rows = [];
             aoa.slice(hi + 1).forEach((r, i) => {
-                const name = xs(g(r, 'name')), sku = xs(g(r, 'sku'));
+                const w = aoaW[hi + 1 + i] || [];
+                const t = f => col[f] === undefined ? '' : String(w[col[f]] ?? '').trim();
+                const name = t('name'), sku = t('sku');
                 if (!name || /^total$/i.test(sku)) return;
-                rows.push({ line: hi + i + 2, sku, style: xs(g(r, 'style')), name, seg: xs(g(r, 'seg')), color: xs(g(r, 'color')), size: xs(g(r, 'size')), qty: Math.max(0, Math.floor(nm(g(r, 'qty')))), cost: nm(g(r, 'cost')), price: nm(g(r, 'price')), barcode: bcNorm(g(r, 'barcode')), note: xs(g(r, 'note')) });
+                rows.push({ line: hi + i + 2, sku, style: t('style'), name, seg: t('seg'), color: t('color'), size: t('size'), qty: Math.max(0, Math.floor(nm(g(r, 'qty')))), cost: nm(g(r, 'cost')), price: nm(g(r, 'price')), barcode: bcNorm(g(r, 'barcode')), note: t('note') });
             });
             if (!rows.length) throw new Error('الملف مفيهوش صفوف منتجات');
             return rows;
