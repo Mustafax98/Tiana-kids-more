@@ -6,6 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Tiana — نظام إدارة المحل</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Sacramento&display=swap"
         rel="stylesheet">
     <script>
@@ -197,6 +200,7 @@
                 <button data-action="openSide" class="lg:hidden btn btn-soft !px-3 text-lg">☰</button>
                 <h1 id="pageTitle" class="title text-lg font-extrabold text-cocoa flex-1 truncate"></h1>
                 <span id="todayLbl" class="hidden md:block text-xs text-stone-500"></span>
+                <span id="syncLbl" class="text-[11px] text-stone-400"></span>
                 <button id="quickPos" data-action="nav" data-page="pos" class="btn btn-primary btn-sm">🛍️ بيع
                     جديد</button>
             </header>
@@ -208,6 +212,17 @@
     <div id="toastRoot" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[200] space-y-2 pointer-events-none"></div>
     <div id="printArea"></div>
 
+    <script>
+        /* ================= FIREBASE SYNC ================= */
+        const FB_CONFIG = {
+            apiKey: "AIzaSyAoD0OUHkelXBXvfp5ybM3Ji6WD1_NBbqE",
+            authDomain: "tiana-kids-more.firebaseapp.com",
+            projectId: "tiana-kids-more",
+            storageBucket: "tiana-kids-more.firebasestorage.app",
+            messagingSenderId: "332703300784",
+            appId: "1:332703300784:web:c935a4da486c7ce69a4f75"
+        };
+    </script>
     <script>
         'use strict';
         /* ================= CORE ================= */
@@ -241,8 +256,10 @@
 
         let memStore = null;
         function loadDB() { try { const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch (e) { return memStore; } }
-        function save() { try { localStorage.setItem(KEY, JSON.stringify(DB)); } catch (e) { memStore = JSON.parse(JSON.stringify(DB)); } }
-
+        function save() {
+            try { localStorage.setItem(KEY, JSON.stringify(DB)); } catch (e) { memStore = JSON.parse(JSON.stringify(DB)); }
+            fbSchedule();
+        }
         function toast(msg, type = 'ok') {
             const el = document.createElement('div');
             el.className = `px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold text-white ${type === 'err' ? 'bg-red-500' : type === 'warn' ? 'bg-amber-500' : 'bg-cocoa'}`;
@@ -323,13 +340,12 @@
         const ORDER_ST = { new: ['جديد', 'bg-blush/30 text-cocoa'], confirmed: ['مؤكد', 'bg-amber-100 text-amber-700'], shipped: ['تم الشحن', 'bg-sky-100 text-sky-700'], delivered: ['تم التسليم', 'bg-emerald-100 text-emerald-700'], cancelled: ['ملغي', 'bg-stone-100 text-stone-500'] };
 
         function seed() {
-            let s = 11; const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647; const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
             const allPerms = PERMS.map(p => p[0]), allActs = ACTIONS.map(a => a[0]);
             DB = {
                 settings: {
                     store: 'Tiana', tagline: 'Made with love for your little one, Wrapped in love from day one', phone: '01000000000', address: 'القاهرة، مصر', instagram: '@tiana.kids',
                     currency: 'ج.م', taxRate: 0, lowStock: 3, returnDays: 14, footer: 'شكراً لثقتكم في Tiana 🤍', logo: '',
-                    pay: { cash: { on: true, label: 'نقدي (كاش)', note: '' }, wallet: { on: true, label: 'محفظة إلكترونية', note: '01000000000' }, instagram: { on: true, label: 'انستجرام', note: '@tiana.kids' } },
+                    pay: { cash: { on: true, label: 'نقدي (كاش)', note: '' }, wallet: { on: true, label: 'محفظة إلكترونية', note: '01000000000' }, onlinepayment: { on: true, label: 'تحويل بنكي / انستا', note: '@tiana.kids' } },
                     counters: { bc: 0, inv: 1000, ret: 0, ord: 0 }
                 },
                 roles: {
@@ -339,13 +355,12 @@
                     store: { label: 'أمين مخزن', perms: ['products', 'stock', 'orders', 'dashboard'] }
                 },
                 users: [
-                    { id: 'u1', name: 'المالك', username: 'owner', pin: '1234', role: 'owner', active: true },
+                    { id: 'u1', name: 'هاني', username: 'owner', pin: '1234', role: 'owner', active: true },
                     { id: 'u2', name: 'مدير الفرع', username: 'manager', pin: '2222', role: 'manager', active: true },
                     { id: 'u3', name: 'كاشير 1', username: 'cashier', pin: '3333', role: 'cashier', active: true },
                     { id: 'u4', name: 'أمين المخزن', username: 'store', pin: '4444', role: 'store', active: true }
                 ],
-                cats: ['مواليد', 'بيبي بنات', 'بيبي أولاد', 'أطقم', 'إكسسوارات'],
-                products: [], invoices: [], returns: [], movements: [], orders: [],
+                cats: [], products: [], invoices: [], returns: [], movements: [], orders: [],
                 landing: {
                     announce: 'شحن لجميع المحافظات 🚚 | الدفع عند الاستلام متاح', heroTitle: 'ملابس ناعمة لصغيرك', heroSub: 'قطع قطنية مختارة بعناية، مصنوعة بحب لتناسب أجمل لحظات طفلك من اليوم الأول.',
                     cta: 'تسوّقي الآن', slogan: 'Made with love for your little one, Wrapped in love from day one', aboutTitle: 'عن Tiana',
@@ -353,45 +368,6 @@
                     heroImg: '', accent: '#B88B62', show: { featured: true, products: true, about: true, contact: true }, shipMain: 50, shipOther: 75, whatsapp: '201000000000', phone: '01000000000', instagram: '@tiana.kids'
                 }
             };
-            const P = [
-                ['بدي قطن مواليد', 'مواليد', 90, 160, '👶', ['0-3 شهور', '3-6 شهور'], ['أبيض', 'بيج']],
-                ['فستان تول وردي', 'بيبي بنات', 220, 380, '👗', ['1 سنة', '2 سنة', '3 سنة'], ['وردي']],
-                ['طقم قطن 3 قطع', 'أطقم', 180, 330, '🧸', ['6-9 شهور', '9-12 شهر'], ['بيج', 'زيتي']],
-                ['سالوبيت جينز', 'بيبي أولاد', 150, 270, '👖', ['1 سنة', '2 سنة', '3 سنة'], ['أزرق']],
-                ['جاكيت بطانة', 'بيبي أولاد', 260, 450, '🧥', ['2 سنة', '3 سنة'], ['زيتي', 'بيج']],
-                ['بيجامة نوم قطن', 'بيبي بنات', 120, 215, '🌙', ['1 سنة', '2 سنة'], ['وردي', 'بيج']],
-                ['طقم خروج مواليد', 'مواليد', 350, 590, '🎁', ['مقاس واحد'], ['أبيض', 'وردي']],
-                ['هيدباند ورد', 'إكسسوارات', 20, 45, '🎀', ['مقاس واحد'], ['وردي', 'بيج', 'أبيض']],
-                ['شراب قطن (3 زوج)', 'إكسسوارات', 35, 70, '🧦', ['مقاس واحد'], ['ألوان متنوعة']],
-                ['بطانية مولود', 'مواليد', 140, 250, '🛏️', ['مقاس واحد'], ['بيج', 'وردي']]
-            ];
-            P.forEach((x, i) => {
-                const p = { id: 'p' + (i + 1), name: x[0], cat: x[1], cost: x[2], price: x[3], emoji: x[4], img: '', minStock: 3, desc: 'قطن ناعم 100% مناسب لبشرة الطفل الحساسة.', published: i < 9, featured: i < 4, variants: [] };
-                x[5].forEach(sz => x[6].forEach(co => p.variants.push({ id: 'v' + uid(), size: sz, color: co, qty: ri(0, 12), barcode: newBarcode() })));
-                DB.products.push(p);
-            });
-            const now = new Date();
-            DB.products.forEach(p => p.variants.forEach(v => { if (v.qty > 0) DB.movements.push({ id: uid(), date: new Date(now - 20 * 864e5).toISOString(), pid: p.id, vid: v.id, name: p.name, label: vlabel(v), qty: v.qty, type: 'open', ref: '', user: 'النظام' }); }));
-            const allV = []; DB.products.forEach(p => p.variants.forEach(v => allV.push([p, v])));
-            const cashiers = ['كاشير 1', 'مدير الفرع', 'المالك'], methods = ['cash', 'cash', 'wallet', 'instagram'];
-            for (let k = 41; k >= 0; k--) {
-                let d = new Date(); d.setDate(d.getDate() - Math.floor(k / 3)); d.setHours(ri(9, 21), ri(0, 59), 0, 0);
-                if (d > now) d = new Date(now.getTime() - ri(1, 120) * 60000);
-                const lines = [], used = {};
-                for (let n = ri(1, 3); n > 0; n--) { const [p, v] = allV[ri(0, allV.length - 1)]; if (used[v.id]) continue; used[v.id] = 1; lines.push({ p, v, qty: ri(1, 2) }); }
-                const sub = lines.reduce((a, l) => a + l.p.price * l.qty, 0);
-                const inv = buildInvoice(lines, { discount: rnd() < .2 ? Math.round(sub * .1) : 0, method: methods[ri(0, 3)], cashier: cashiers[ri(0, 2)], date: d });
-                inv.pay.received = inv.total;
-            }
-            DB.invoices.sort((a, b) => b.date.localeCompare(a.date));
-            const mk = (name, phone, gov, addr, items, status) => {
-                const its = items.map(([i, q]) => { const p = DB.products[i], v = p.variants[0]; return { pid: p.id, vid: v.id, name: p.name, label: vlabel(v), qty: q, price: p.price }; });
-                const sub = its.reduce((a, l) => a + l.price * l.qty, 0), ship = gov === 'القاهرة' || gov === 'الجيزة' ? 50 : 75;
-                DB.orders.unshift({ id: 'ORD-' + pad(++DB.settings.counters.ord, 3), date: new Date(now - ri(1, 30) * 36e5).toISOString(), customer: { name, phone, gov, address: addr, notes: '' }, items: its, subtotal: sub, ship, total: sub + ship, status, pay: 'cash', source: 'landing', invId: '' });
-            };
-            mk('منى أحمد', '01011112222', 'القاهرة', 'مدينة نصر - شارع مصطفى النحاس - عمارة 5', [[1, 1], [7, 2]], 'new');
-            mk('سارة محمود', '01233334444', 'الإسكندرية', 'سموحة - شارع فوزي معاذ', [[0, 2]], 'new');
-            mk('هدى علي', '01155556666', 'الجيزة', 'الهرم - شارع الملك فيصل', [[2, 1]], 'cancelled');
             save();
         }
 
@@ -536,7 +512,7 @@
             const pm = Object.entries(m30.byPay), pmTot = pm.reduce((a, [, v]) => a + v, 0) || 1;
             return `<div class="space-y-4">
   <div class="grid grid-cols-2 xl:grid-cols-4 gap-3">
-    ${kpi('💰', 'مبيعات اليوم (صافي)', money(m.net), `${m.count} فاتورة`, '#F6EBE0')}
+    ${kpi('💰', 'مبيعات اليوم', money(m.net), `${m.count} فاتورة`, '#F6EBE0')}
     ${can('cost') ? kpi('📈', 'ربح اليوم', money(m.profit), 'بعد خصم التكلفة', '#EDEBE3') : kpi('🧾', 'قطع مباعة اليوم', m.items, '', '#EDEBE3')}
     ${kpi('🗓️', 'مبيعات الشهر', money(mo.net), `${mo.count} فاتورة`, '#F4DDD9')}
     ${kpi('⚠️', 'أصناف قاربت على النفاد', low.length, `${newOrders()} طلب أونلاين جديد`, '#FBE9D0')}
@@ -557,6 +533,7 @@
 
         /* ================= SHARED: pick variant / log ================= */
         function logMove(p, v, delta, type, ref) { DB.movements.unshift({ id: uid(), date: new Date().toISOString(), pid: p.id, vid: v.id, name: p.name, label: vlabel(v), qty: delta, type, ref: ref || '', user: USER ? USER.name : 'النظام' }); }
+        const vm = (v, q) => v.barcode.includes(q) || (v.sku || '').toLowerCase().includes(q);
         function pickVariant(cb, o = {}) {
             PICK = { cb, o };
             modal('اختيار الصنف', `<input id="pickQ" class="inp mb-3" placeholder="ابحثي بالاسم أو الباركود..." data-oninput="pickQ" autocomplete="off"><div id="pickList" class="space-y-1.5 max-h-[55vh] overflow-y-auto"></div>`);
@@ -644,7 +621,7 @@
         }
         function posScan(raw) {
             const code = toLatin(raw).trim(); if (!code) return; let hit = null;
-            DB.products.forEach(p => p.variants.forEach(v => { if (v.barcode === code) hit = { p, v }; }));
+            DB.products.forEach(p => p.variants.forEach(v => { if (v.barcode === code || (v.sku || '').toLowerCase() === code.toLowerCase()) hit = { p, v }; }));
             if (hit) { POS.q = ''; $('#posGrid').innerHTML = posGridHTML(); return addToCart(hit.v.id, 1, true); }
             const q = code.toLowerCase(), m = DB.products.filter(p => p.name.toLowerCase().includes(q));
             if (m.length === 1) { POS.q = ''; $('#posGrid').innerHTML = posGridHTML(); return ACT.posPick({ dataset: { pid: m[0].id } }); }
@@ -724,6 +701,7 @@
     <input class="inp flex-1 min-w-[200px]" placeholder="بحث بالاسم أو الباركود..." value="${esc(UI.prodQ)}" data-oninput="prodQ">
     <select class="inp !w-auto" data-onchange="prodCat"><option value="">كل الأقسام</option>${selOpts(DB.cats, UI.prodCat)}</select>
     <button class="btn btn-primary" data-action="prodNew">＋ إضافة منتج</button><button class="btn btn-soft" data-action="catManage">🏷️ الأقسام</button></div>
+    <button class="btn btn-soft" data-action="xlImportBtn">⬆️ استيراد إكسل</button><button class="btn btn-soft" data-action="xlExport">⬇️ تصدير إكسل</button><button class="btn btn-soft" data-action="labelsAll">🖨️ ملصقات الكل</button>
     <div id="prodList">${prodListHTML()}</div></div>`;
         }
         function prodListHTML() {
@@ -755,6 +733,7 @@
       <div class="grid grid-cols-2 gap-3"><div class="col-span-2"><label class="lbl">اسم المنتج *</label><input id="ep_name" class="inp" value="${esc(EP.name)}"></div>
         <div><label class="lbl">القسم</label><input id="ep_cat" class="inp" list="catList" value="${esc(EP.cat)}"><datalist id="catList">${DB.cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist></div>
         <div><label class="lbl">أيقونة (إيموجي)</label><input id="ep_emoji" class="inp" value="${esc(EP.emoji)}" maxlength="4"></div>
+        <div><label class="lbl">Style</label><input id="ep_style" class="inp" value="${esc(EP.style)}"></div>
         ${sc ? `<div><label class="lbl">سعر التكلفة</label><input id="ep_cost" type="number" min="0" class="inp" value="${EP.cost}" ${ep ? '' : 'disabled'}></div>` : ''}
         <div><label class="lbl">سعر البيع *</label><input id="ep_price" type="number" min="0" class="inp" value="${EP.price}" ${ep ? '' : 'disabled'}></div>
         <div><label class="lbl">حد التنبيه (مخزون منخفض)</label><input id="ep_min" type="number" min="0" class="inp" value="${EP.minStock}"></div></div></div>
@@ -765,14 +744,8 @@
                 { size: 'lg', footer: '<button class="btn btn-primary" data-action="prodSave">💾 حفظ</button><button class="btn btn-ghost" data-action="closeModal">إلغاء</button>' });
             renderVarRows();
         }
-        function renderVarRows() {
-            $('#epVars').innerHTML = EP.variants.map((v, i) => `<div class="grid grid-cols-2 sm:grid-cols-12 gap-2 items-center p-2 rounded-xl bg-sand/10">
-    <input class="inp sm:col-span-3" placeholder="المقاس" value="${esc(v.size)}" data-oninput="epVar" data-i="${i}" data-f="size"><input class="inp sm:col-span-3" placeholder="اللون" value="${esc(v.color)}" data-oninput="epVar" data-i="${i}" data-f="color">
-    <input class="inp sm:col-span-2" type="number" min="0" placeholder="الكمية" value="${v.qty}" data-oninput="epVar" data-i="${i}" data-f="qty"><input class="inp sm:col-span-3 !px-2 font-mono text-xs" value="${esc(v.barcode)}" data-oninput="epVar" data-i="${i}" data-f="barcode">
-    <button class="btn btn-danger btn-sm sm:col-span-1" data-action="epDelVar" data-i="${i}">✕</button></div>`).join('');
-        }
         ACT.epVar = t => { const v = EP.variants[+t.dataset.i], f = t.dataset.f; v[f] = f === 'qty' ? Math.max(0, Math.floor(num(t.value))) : t.value.trim(); };
-        ACT.epAddVar = () => { EP.variants.push({ id: 'v' + uid(), size: '', color: '', qty: 0, barcode: newBarcode() }); renderVarRows(); };
+        ACT.epAddVar = () => { EP.variants.push({ id: 'v' + uid(), sku: '', size: '', color: '', qty: 0, barcode: newBarcode() }); renderVarRows(); };
         ACT.epDelVar = t => { if (EP.variants.length <= 1) return toast('لازم يبقى صنف واحد على الأقل', 'warn'); EP.variants.splice(+t.dataset.i, 1); renderVarRows(); };
         ACT.epImg = async t => { if (t.files[0]) { EP.img = await readImage(t.files[0]); $('#epImgPrev').innerHTML = thumb(EP, 'h-32'); } };
         ACT.epImgDel = () => { EP.img = ''; $('#epImgPrev').innerHTML = thumb(EP, 'h-32'); };
@@ -784,14 +757,30 @@
                 if (!v.barcode) v.barcode = newBarcode(); if (codes.has(v.barcode)) return toast('باركود مكرر: ' + v.barcode, 'err'); codes.add(v.barcode);
                 if (DB.products.some(p => p.id !== EP.id && p.variants.some(x => x.barcode === v.barcode))) return toast('الباركود مستخدم في منتج آخر: ' + v.barcode, 'err');
             }
+            const skus = new Set();
+            for (const v of EP.variants) {
+                if (!v.sku) continue; const k = v.sku.toLowerCase();
+                if (skus.has(k)) return toast('SKU مكرر: ' + v.sku, 'err'); skus.add(k);
+                if (DB.products.some(p => p.id !== EP.id && p.variants.some(x => (x.sku || '').toLowerCase() === k))) return toast('SKU مستخدم في منتج آخر: ' + v.sku, 'err');
+            }
             const ce = $('#ep_cost'); if (ce) EP.cost = num(ce.value);
-            Object.assign(EP, { name, cat: g('ep_cat') || 'عام', price, minStock: num(g('ep_min')), emoji: g('ep_emoji') || '👗', desc: g('ep_desc'), published: $('#ep_pub').checked, featured: $('#ep_feat').checked });
+            Object.assign(EP, { name, style: g('ep_style'), cat: g('ep_cat') || 'عام', price, minStock: num(g('ep_min')), emoji: g('ep_emoji') || '👗', desc: g('ep_desc'), published: $('#ep_pub').checked, featured: $('#ep_feat').checked });
             if (!DB.cats.includes(EP.cat)) DB.cats.push(EP.cat);
             const old = DB.products.find(p => p.id === EP.id);
             if (old) { EP.variants.forEach(v => { const o = old.variants.find(x => x.id === v.id), prev = o ? o.qty : 0; if (v.qty !== prev) logMove(EP, v, v.qty - prev, o ? 'adjust' : 'open', 'تعديل المنتج'); }); DB.products[DB.products.indexOf(old)] = EP; }
             else { EP.id = 'p' + uid(); EP.variants.forEach(v => { if (v.qty > 0) logMove(EP, v, v.qty, 'open', 'منتج جديد'); }); DB.products.push(EP); }
             save(); closeTopModal(); renderView(); toast('تم حفظ المنتج');
         };
+        function renderVarRows() {
+            $('#epVars').innerHTML = EP.variants.map((v, i) => `<div class="p-2 rounded-xl bg-sand/10 space-y-2">
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <input class="inp" placeholder="SKU" value="${esc(v.sku)}" data-oninput="epVar" data-i="${i}" data-f="sku">
+      <input class="inp" placeholder="المقاس / Age" value="${esc(v.size)}" data-oninput="epVar" data-i="${i}" data-f="size">
+      <input class="inp" placeholder="اللون" value="${esc(v.color)}" data-oninput="epVar" data-i="${i}" data-f="color">
+      <input class="inp" type="number" min="0" placeholder="الكمية" value="${v.qty}" data-oninput="epVar" data-i="${i}" data-f="qty"></div>
+    <div class="flex gap-2"><input class="inp flex-1 font-mono text-xs" value="${esc(v.barcode)}" data-oninput="epVar" data-i="${i}" data-f="barcode"><button class="btn btn-danger btn-sm" data-action="epDelVar" data-i="${i}">✕</button></div></div>`).join('');
+        }
+
         function labelHTML(p, v) { return `<div style="width:42mm;border:1px dashed #ccc;padding:2mm;text-align:center;font-family:Cairo,Helvetica,sans-serif;page-break-inside:avoid"><div style="font-size:9px;font-weight:700">${esc(S().store)}</div><div style="font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</div><div style="font-size:9px">${esc(vlabel(v))}</div>${eanSVG(v.barcode, 30)}<div style="font-size:11px;font-weight:800">${money(p.price)}</div></div>`; }
         ACT.labels = t => {
             const p = DB.products.find(x => x.id === t.dataset.pid);
@@ -996,7 +985,7 @@
             const cnt = s => DB.orders.filter(o => s === 'all' || o.status === s).length;
             return `<div class="space-y-4"><div class="card p-3 flex flex-wrap gap-2 items-center"><div class="flex gap-1.5 overflow-x-auto flex-1 pb-1">
     ${[['all', 'الكل'], ...Object.entries(ORDER_ST).map(([k, v]) => [k, v[0]])].map(([k, l]) => `<button class="chip ${UI.ordSt === k ? 'chip-on' : ''}" data-action="ordSt" data-s="${k}">${l} (${cnt(k)})</button>`).join('')}</div>
-    <button class="btn btn-primary" data-action="ordNew">＋ طلب جديد (انستجرام / واتساب)</button></div><div id="ordList">${ordListHTML()}</div></div>`;
+    <button class="btn btn-primary" data-action="ordNew">＋ طلب جديد (واتساب)</button></div><div id="ordList">${ordListHTML()}</div></div>`;
         }
         function ordListHTML() {
             const list = DB.orders.filter(o => UI.ordSt === 'all' || o.status === UI.ordSt);
@@ -1044,7 +1033,7 @@
         ACT.ordNew = () => {
             NO = { items: [] };
             modal('طلب جديد (يدوي)', `<div class="space-y-3"><div class="grid sm:grid-cols-2 gap-3"><div><label class="lbl">اسم العميل *</label><input id="no_name" class="inp"></div><div><label class="lbl">الموبايل *</label><input id="no_phone" class="inp" inputmode="tel"></div>
-    <div><label class="lbl">المحافظة</label><select id="no_gov" class="inp" data-onchange="noGov">${selOpts(GOVS, 'القاهرة')}</select></div><div><label class="lbl">مصدر الطلب</label><select id="no_src" class="inp">${selOpts(['انستجرام', 'واتساب', 'مكالمة', 'فيسبوك'], 'انستجرام')}</select></div>
+    <div><label class="lbl">المحافظة</label><select id="no_gov" class="inp" data-onchange="noGov">${selOpts(GOVS, 'القاهرة')}</select></div><div><label class="lbl">مصدر الطلب</label><select id="no_src" class="inp">${selOpts(['انستا', 'واتساب', 'مكالمة', 'فيسبوك'], 'انستا')}</select></div>
     <div class="sm:col-span-2"><label class="lbl">العنوان بالتفصيل *</label><textarea id="no_addr" rows="2" class="inp"></textarea></div><div><label class="lbl">طريقة الدفع</label><select id="no_pay" class="inp">${enabledPays().map(m => `<option value="${m}">${esc(payLabel(m))}${m === 'cash' ? ' (عند الاستلام)' : ''}</option>`).join('')}</select></div>
     <div><label class="lbl">رسوم الشحن</label><input id="no_ship" type="number" min="0" class="inp" value="${shipFor('القاهرة')}" data-oninput="noShip"></div><div class="sm:col-span-2"><label class="lbl">ملاحظات</label><input id="no_notes" class="inp"></div></div>
     <div class="flex items-center justify-between"><h4 class="font-bold text-cocoa">المنتجات</h4><button class="btn btn-soft btn-sm" data-action="noAdd">＋ إضافة منتج</button></div><div id="noItems"></div></div>`,
@@ -1168,10 +1157,10 @@
       <label class="btn btn-soft btn-sm w-full mt-2 cursor-pointer">🖼️ رفع اللوجو<input type="file" accept="image/*" class="hidden" data-onchange="logoUp"></label>${s.logo ? '<button class="btn btn-ghost btn-sm w-full mt-1" data-action="logoDel">إزالة</button>' : ''}<p class="text-[11px] text-stone-400 mt-2 leading-5">يظهر في السايدبار والفواتير والبوليصة واللاندنج. الأفضل PNG بخلفية شفافة.</p></div>
       <div class="grid sm:grid-cols-2 gap-3"><div><label class="lbl">اسم المحل</label><input id="st_store" class="inp" value="${esc(s.store)}"></div><div><label class="lbl">الموبايل</label><input id="st_phone" class="inp" value="${esc(s.phone)}"></div>
         <div class="sm:col-span-2"><label class="lbl">الشعار (Slogan)</label><input id="st_tag" class="inp" value="${esc(s.tagline)}"></div><div class="sm:col-span-2"><label class="lbl">العنوان</label><input id="st_addr" class="inp" value="${esc(s.address)}"></div>
-        <div><label class="lbl">انستجرام</label><input id="st_ig" class="inp" value="${esc(s.instagram)}"></div><div><label class="lbl">العملة</label><input id="st_cur" class="inp" value="${esc(s.currency)}"></div></div></div></div>
+        <div><label class="lbl">انستا</label><input id="st_ig" class="inp" value="${esc(s.instagram)}"></div><div><label class="lbl">العملة</label><input id="st_cur" class="inp" value="${esc(s.currency)}"></div></div></div></div>
   <div class="card p-5"><h3 class="font-extrabold text-cocoa title mb-4">الفواتير والمخزون</h3><div class="grid sm:grid-cols-3 gap-3"><div><label class="lbl">نسبة الضريبة %</label><input id="st_tax" type="number" min="0" class="inp" value="${s.taxRate}"></div><div><label class="lbl">حد تنبيه المخزون الافتراضي</label><input id="st_low" type="number" min="0" class="inp" value="${s.lowStock}"></div><div><label class="lbl">مدة الإرجاع (يوم)</label><input id="st_ret" type="number" min="0" class="inp" value="${s.returnDays}"></div>
     <div class="sm:col-span-3"><label class="lbl">رسالة أسفل الفاتورة</label><input id="st_foot" class="inp" value="${esc(s.footer)}"></div></div></div>
-  <div class="card p-5"><h3 class="font-extrabold text-cocoa title mb-1">طرق الدفع</h3><p class="text-xs text-stone-500 mb-4">فعّلي/أوقفي الطريقة وغيّري اسمها، والملاحظة تظهر للكاشير (مثل رقم المحفظة أو حساب انستجرام).</p>
+  <div class="card p-5"><h3 class="font-extrabold text-cocoa title mb-1">طرق الدفع</h3><p class="text-xs text-stone-500 mb-4">فعّلي/أوقفي الطريقة وغيّري اسمها، والملاحظة تظهر للكاشير (مثل رقم المحفظة أو حساب انستا).</p>
     <div class="space-y-3">${Object.keys(s.pay).map(k => `<div class="grid grid-cols-[auto_1fr_1fr] gap-3 items-center p-3 rounded-xl bg-sand/10"><div class="flex items-center gap-2">${toggle(s.pay[k].on, `id="st_on_${k}"`)}<span class="text-xl">${PAY_ICON[k] || '💳'}</span></div><input id="st_lb_${k}" class="inp" value="${esc(s.pay[k].label)}"><input id="st_nt_${k}" class="inp" placeholder="ملاحظة / رقم الحساب" value="${esc(s.pay[k].note)}"></div>`).join('')}</div></div>
   <div class="flex flex-wrap gap-2"><button class="btn btn-primary" data-action="setSave">💾 حفظ الإعدادات</button></div>
   <div class="card p-5"><h3 class="font-extrabold text-cocoa title mb-3">النسخ الاحتياطي</h3><p class="text-xs text-stone-500 mb-3">البيانات محفوظة في هذا المتصفح حالياً (بدون قاعدة بيانات). خدي نسخة دورية.</p>
@@ -1217,7 +1206,7 @@
   ${L.show.about ? `<section id="lp-about" class="lp-sec" style="text-align:center"><h3 style="font-size:22px;font-weight:800;color:#5a4030;margin-bottom:10px">${esc(L.aboutTitle)}</h3><p style="max-width:620px;margin:0 auto 24px;color:#7a6a5d;line-height:2">${esc(L.about)}</p>
     <div class="lp-grid" style="max-width:760px;margin:auto">${[['🌿', 'خامات قطنية ناعمة'], ['🚚', 'شحن لكل المحافظات'], ['↩️', 'استبدال واسترجاع سهل']].map(x => `<div class="lp-card" style="padding:18px"><div style="font-size:30px">${x[0]}</div><div style="font-weight:700;margin-top:6px">${x[1]}</div></div>`).join('')}</div></section>` : ''}
   ${L.show.contact ? `<section id="lp-contact" class="lp-sec" style="background:#F4EADF;text-align:center"><h3 style="font-size:22px;font-weight:800;color:#5a4030;margin-bottom:12px">تواصلي معنا</h3><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-    <a class="lp-btn" href="https://wa.me/${esc(L.whatsapp)}" target="_blank" rel="noopener">واتساب</a><a class="lp-btn" style="background:#D3A59F" href="https://instagram.com/${esc(ig)}" target="_blank" rel="noopener">انستجرام ${esc(L.instagram)}</a><a class="lp-btn" style="background:#87624C" href="tel:${esc(L.phone)}">${esc(L.phone)}</a></div></section>` : ''}
+    <a class="lp-btn" href="https://wa.me/${esc(L.whatsapp)}" target="_blank" rel="noopener">واتساب</a><a class="lp-btn" style="background:#D3A59F" href="https://instagram.com/${esc(ig)}" target="_blank" rel="noopener">انستا ${esc(L.instagram)}</a><a class="lp-btn" style="background:#87624C" href="tel:${esc(L.phone)}">${esc(L.phone)}</a></div></section>` : ''}
   <footer style="padding:20px;text-align:center;font-size:12px;color:#9A8F74;background:#fff">© ${new Date().getFullYear()} ${esc(S().store)} — ${esc(S().footer)}</footer></div>`;
         }
         function pgLanding() {
@@ -1282,7 +1271,7 @@
     <div class="space-y-4"><div class="card p-5"><h3 class="font-extrabold text-cocoa title mb-3">الشكل والأقسام</h3><div class="mb-4"><label class="lbl">لون الأزرار</label><div class="flex gap-2">${['#DEC8AF', '#D3A59F', '#B88B62', '#9A8F74', '#87624C'].map(c => `<button data-action="lpAccent" data-c="${c}" class="w-9 h-9 rounded-full border-4 ${L.accent === c ? 'border-stone-800' : 'border-white'} shadow" style="background:${c}"></button>`).join('')}</div></div>
       <div class="mb-4"><label class="lbl">صورة الغلاف (Hero)</label><div class="flex gap-2 items-center"><label class="btn btn-soft btn-sm cursor-pointer">📷 رفع صورة<input type="file" accept="image/*" class="hidden" data-onchange="lpHeroImg"></label>${L.heroImg ? '<button class="btn btn-danger btn-sm" data-action="lpHeroDel">إزالة</button><img src="' + L.heroImg + '" class="h-10 rounded-lg" alt="">' : ''}</div></div>
       <div class="grid grid-cols-2 gap-3 text-sm">${[['featured', 'الأكثر طلباً'], ['products', 'كل المنتجات'], ['about', 'عن المحل'], ['contact', 'التواصل']].map(([k, l]) => `<label class="flex items-center gap-2">${toggle(L.show[k], `data-onchange="lpShow" data-k="${k}"`)} ${l}</label>`).join('')}</div></div>
-    <div class="card p-5"><h3 class="font-extrabold text-cocoa title mb-3">التواصل والشحن</h3><div class="grid sm:grid-cols-2 gap-3">${fld('whatsapp', 'واتساب (بصيغة دولية 2010...)')}${fld('phone', 'الموبايل')}${fld('instagram', 'انستجرام')}<div></div><div><label class="lbl">شحن القاهرة والجيزة</label><input type="number" min="0" class="inp" value="${L.shipMain}" data-oninput="lpField" data-k="shipMain"></div><div><label class="lbl">شحن باقي المحافظات</label><input type="number" min="0" class="inp" value="${L.shipOther}" data-oninput="lpField" data-k="shipOther"></div></div></div></div></div>
+    <div class="card p-5"><h3 class="font-extrabold text-cocoa title mb-3">التواصل والشحن</h3><div class="grid sm:grid-cols-2 gap-3">${fld('whatsapp', 'واتساب (بصيغة دولية 2010...)')}${fld('phone', 'الموبايل')}${fld('instagram', 'انستا')}<div></div><div><label class="lbl">شحن القاهرة والجيزة</label><input type="number" min="0" class="inp" value="${L.shipMain}" data-oninput="lpField" data-k="shipMain"></div><div><label class="lbl">شحن باقي المحافظات</label><input type="number" min="0" class="inp" value="${L.shipOther}" data-oninput="lpField" data-k="shipOther"></div></div></div></div></div>
   <div class="card"><div class="p-4 flex flex-wrap gap-2 items-center justify-between"><h3 class="font-extrabold text-cocoa title">المنتجات المعروضة في اللاندنج</h3><div class="flex gap-2"><button class="btn btn-soft btn-sm" data-action="lpPubAll" data-v="1">نشر الكل</button><button class="btn btn-soft btn-sm" data-action="lpPubAll" data-v="0">إخفاء الكل</button></div></div>
     <div class="overflow-x-auto"><table class="w-full min-w-[620px]"><thead><tr><th class="th">المنتج</th><th class="th">السعر</th><th class="th">المخزون</th><th class="th">منشور</th><th class="th">مميز</th><th class="th"></th></tr></thead><tbody>
     ${DB.products.map(p => `<tr><td class="td"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-lg overflow-hidden">${thumb(p, 'h-10')}</div><b>${esc(p.name)}</b></div></td><td class="td">${money(p.price)}</td><td class="td">${totalQty(p)}</td><td class="td">${toggle(p.published, `data-onchange="pubToggle" data-pid="${p.id}" data-f="published"`)}</td><td class="td">${toggle(p.featured, `data-onchange="pubToggle" data-pid="${p.id}" data-f="featured"`)}</td><td class="td"><button class="btn btn-soft btn-sm" data-action="prodEdit" data-pid="${p.id}">✏️ تعديل الوصف/الصورة</button></td></tr>`).join('')}</tbody></table></div></div></div>`;
@@ -1317,18 +1306,273 @@
         document.addEventListener('keydown', e => {
             const t = e.target;
             if (e.key === 'Enter' && t.id === 'posScan') { e.preventDefault(); const v = t.value; t.value = ''; posScan(v); return; }
+            if (e.key === 'Enter' && t.id === 'pickQ') { e.preventDefault(); const bs = $$('#pickList [data-action="pickRow"]'); if (bs.length === 1) bs[0].click(); return; }
             if (e.key === 'Enter' && t.dataset && t.dataset.enter && ACT[t.dataset.enter]) { e.preventDefault(); ACT[t.dataset.enter](t, e); return; }
             if (e.key === 'Escape' && $('#modalRoot .modal')) { closeTopModal(); return; }
             if (PAGE === 'pos' && USER && !/INPUT|TEXTAREA|SELECT/.test(t.tagName) && !$('#modalRoot .modal') && e.key.length === 1 && !e.ctrlKey && !e.metaKey) { const s = $('#posScan'); if (s) s.focus(); }
         });
-        function init() {
-            DB = loadDB(); if (!DB) seed(); else migrate();
+        /* ================= EXCEL IMPORT / EXPORT ================= */
+        let XL = null;
+        const XL_HEAD = ['SKU Code', 'Style', 'Product', 'Segment', 'Color / Print', 'Age', 'Qty', 'unit cost', 'total cost', 'Selling Price (EGP)', 'Expected Sales (EGP)', 'Margin amount', 'margin %', 'Barcode', 'Notes'];
+        const XL_MAP = {
+            sku: ['skucode', 'sku', 'كودالصنف'], style: ['style', 'ستايل'], name: ['product', 'productname', 'name', 'المنتج', 'اسمالمنتج'],
+            seg: ['segment', 'القسم'], color: ['colorprint', 'color', 'colour', 'print', 'اللون'], size: ['age', 'size', 'المقاس'],
+            qty: ['qty', 'quantity', 'الكمية'], cost: ['unitcost', 'cost', 'التكلفة', 'سعرالتكلفة'],
+            price: ['sellingpriceegp', 'sellingprice', 'price', 'سعرالبيع', 'السعر'], barcode: ['barcode', 'الباركود'], note: ['notes', 'note', 'ملاحظات']
+        };
+        const xlNorm = h => String(h ?? '').toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]/g, '');
+        const nm = v => typeof v === 'number' ? v : num(String(v ?? '').replace(/,/g, ''));
+        const xs = v => typeof v === 'number' ? String(v) : String(v ?? '').trim();
+        const bcNorm = v => { let s = typeof v === 'number' ? String(Math.round(v)) : String(v ?? '').trim().replace(/\s+/g, ''); if (/^\d{12}$/.test(s)) s += ean13check(s); return s; };
+
+        async function xlRead(file) {
+            const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+            const aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '', blankrows: true });
+            const has = (ks, f) => XL_MAP[f].some(a => ks.includes(a));
+            const hi = aoa.findIndex(r => { const ks = r.map(xlNorm); return has(ks, 'name') && has(ks, 'qty'); });
+            if (hi < 0) throw new Error('مش لاقي صف العناوين — لازم يكون فيه عمودين على الأقل: Product و Qty');
+            const col = {}; aoa[hi].map(xlNorm).forEach((k, i) => { for (const f in XL_MAP) if (col[f] === undefined && XL_MAP[f].includes(k)) col[f] = i; });
+            const g = (r, f) => col[f] === undefined ? '' : r[col[f]];
+            const rows = [];
+            aoa.slice(hi + 1).forEach((r, i) => {
+                const name = xs(g(r, 'name')), sku = xs(g(r, 'sku'));
+                if (!name || /^total$/i.test(sku)) return;
+                rows.push({ line: hi + i + 2, sku, style: xs(g(r, 'style')), name, seg: xs(g(r, 'seg')), color: xs(g(r, 'color')), size: xs(g(r, 'size')), qty: Math.max(0, Math.floor(nm(g(r, 'qty')))), cost: nm(g(r, 'cost')), price: nm(g(r, 'price')), barcode: bcNorm(g(r, 'barcode')), note: xs(g(r, 'note')) });
+            });
+            if (!rows.length) throw new Error('الملف مفيهوش صفوف منتجات');
+            return rows;
+        }
+        function xlPlan(rows) {
+            const bySku = {}, byBc = {};
+            DB.products.forEach(p => p.variants.forEach(v => { if (v.sku) bySku[v.sku.toLowerCase()] = { p, v }; byBc[v.barcode] = { p, v }; }));
+            const items = [], errors = [], seenSku = new Set(), seenBc = new Set();
+            rows.forEach(r => {
+                const err = m => errors.push('سطر ' + r.line + ': ' + m), sk = r.sku.toLowerCase();
+                if (sk && seenSku.has(sk)) return err('SKU مكرر في الملف (' + r.sku + ')');
+                if (/^\d+\.?\d*e\+?\d+$/i.test(r.barcode)) return err('الباركود بصيغة علمية — خلي عمود الباركود Text في إكسل');
+                if (r.barcode && seenBc.has(r.barcode)) return err('باركود مكرر في الملف (' + r.barcode + ')');
+                const ex = (sk && bySku[sk]) || (r.barcode && byBc[r.barcode]) || null;
+                if (r.barcode) { const o = byBc[r.barcode]; if (o && (!ex || o.v !== ex.v)) return err('الباركود مستخدم في صنف آخر (' + r.barcode + ')'); }
+                if (!ex && !(r.price > 0)) return err('سعر البيع مطلوب للصنف الجديد');
+                if (sk) seenSku.add(sk); if (r.barcode) seenBc.add(r.barcode);
+                items.push({ r, ex });
+            });
+            return { items, errors };
+        }
+        function xlPreview(P) {
+            const nNew = P.items.filter(i => !i.ex).length, nUp = P.items.length - nNew, nAuto = P.items.filter(i => !i.ex && !i.r.barcode).length;
+            return `<div class="grid grid-cols-3 gap-2 text-center text-sm"><div class="p-3 rounded-xl bg-emerald-50"><b class="text-lg">${nNew}</b><div class="text-xs">صنف جديد</div></div><div class="p-3 rounded-xl bg-sky-50"><b class="text-lg">${nUp}</b><div class="text-xs">تحديث لصنف موجود</div></div><div class="p-3 rounded-xl bg-amber-50"><b class="text-lg">${nAuto}</b><div class="text-xs">باركود هيتولّد</div></div></div>
+  ${P.errors.length ? `<div class="rounded-xl bg-red-50 text-red-600 p-3 text-xs leading-6 mt-3"><b>سطور هتتخطى (${P.errors.length}):</b><br>${P.errors.slice(0, 15).map(esc).join('<br>')}</div>` : ''}
+  <div class="overflow-x-auto mt-3 max-h-64 overflow-y-auto"><table class="w-full min-w-[640px]"><thead><tr><th class="th">الحالة</th><th class="th">SKU</th><th class="th">المنتج</th><th class="th">اللون / المقاس</th><th class="th">الكمية</th><th class="th">التكلفة</th><th class="th">السعر</th><th class="th">الباركود</th></tr></thead><tbody>
+  ${P.items.slice(0, 60).map(({ r, ex }) => `<tr><td class="td"><span class="badge ${ex ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}">${ex ? 'تحديث' : 'جديد'}</span></td><td class="td text-xs">${esc(r.sku)}</td><td class="td text-xs">${esc(r.name)}</td><td class="td text-xs">${esc([r.color, r.size].filter(Boolean).join(' / '))}</td><td class="td">${r.qty}</td><td class="td">${money(r.cost)}</td><td class="td">${money(r.price)}</td><td class="td font-mono text-xs">${esc(r.barcode || (ex ? ex.v.barcode : 'تلقائي'))}</td></tr>`).join('')}</tbody></table></div>`;
+        }
+        ACT.xlImportBtn = () => {
+            if (!can('editPrice')) return toast('الاستيراد بيحتاج صلاحية تعديل الأسعار', 'err');
+            XL = null;
+            modal('⬆️ استيراد من إكسل', `<div class="space-y-4">
+    <div class="text-sm text-stone-600 leading-7">الأعمدة المطلوبة: <b>Product</b> و <b>Qty</b> و <b>Selling Price</b> (للصنف الجديد). الباقي اختياري: SKU Code وStyle وSegment وColor / Print وAge وunit cost وBarcode وNotes. لو الباركود فاضي هيتولّد تلقائي. أعمدة الحسابات (total cost وExpected Sales وMargin) بتتجاهل لأن النظام بيحسبها.</div>
+    <div class="flex flex-wrap gap-2"><label class="btn btn-primary cursor-pointer">📂 اختيار ملف<input type="file" accept=".xlsx,.xls,.csv" class="hidden" data-onchange="xlPick"></label><button class="btn btn-soft" data-action="xlTemplate">⬇️ تحميل نموذج</button></div>
+    <div><label class="lbl">لو الـ SKU موجود بالفعل</label><select id="xlMode" class="inp"><option value="add">أضيف الكمية على الرصيد الحالي (استلام بضاعة)</option><option value="set">استبدل الرصيد بالكمية اللي في الملف (جرد)</option></select></div>
+    <div id="xlBody"></div></div>`, { size: 'lg', footer: '<button id="xlGo" class="btn btn-primary" data-action="xlRun" disabled>✔ تنفيذ الاستيراد</button><button class="btn btn-ghost" data-action="closeModal">إلغاء</button>' });
+        };
+        ACT.xlPick = async t => {
+            const f = t.files[0]; if (!f) return; const box = $('#xlBody'); box.innerHTML = empty('جاري القراءة…');
+            try { XL = xlPlan(await xlRead(f)); box.innerHTML = xlPreview(XL); $('#xlGo').disabled = !XL.items.length; }
+            catch (e) { XL = null; $('#xlGo').disabled = true; box.innerHTML = `<div class="rounded-xl bg-red-50 text-red-600 p-3 text-sm">${esc(e.message || e)}</div>`; }
+            t.value = '';
+        };
+        ACT.xlRun = () => {
+            if (!XL || !XL.items.length) return;
+            const mode = $('#xlMode').value, touched = new Set(); let nNew = 0;
+            XL.items.forEach(({ r, ex }) => {
+                let p, v;
+                if (ex) {
+                    p = ex.p; v = ex.v;
+                    if (r.name) p.name = r.name; if (r.style) p.style = r.style; if (r.cost > 0) p.cost = r.cost; if (r.price > 0) p.price = r.price;
+                    if (r.sku) v.sku = r.sku; if (r.size) v.size = r.size; if (r.color) v.color = r.color; if (r.seg) v.seg = r.seg; if (r.note) v.note = r.note; if (r.barcode) v.barcode = r.barcode;
+                    if (mode === 'add') { if (r.qty > 0) moveStock(p, v, r.qty, 'receive', 'استيراد إكسل'); }
+                    else { const d = r.qty - v.qty; if (d) moveStock(p, v, d, 'adjust', 'استيراد إكسل'); }
+                } else {
+                    p = DB.products.find(x => (x.style || '') === r.style && x.name === r.name && x.cost === r.cost && x.price === r.price);
+                    if (!p) { p = { id: 'p' + uid(), name: r.name, style: r.style, cat: r.seg || 'عام', cost: r.cost, price: r.price, emoji: '👗', img: '', minStock: S().lowStock, desc: '', published: true, featured: false, variants: [] }; DB.products.push(p); }
+                    v = { id: 'v' + uid(), sku: r.sku, size: r.size, color: r.color, seg: r.seg, note: r.note, qty: 0, barcode: r.barcode || newBarcode() };
+                    p.variants.push(v); if (r.qty > 0) moveStock(p, v, r.qty, 'open', 'استيراد إكسل'); nNew++;
+                }
+                touched.add(p);
+            });
+            touched.forEach(p => {
+                const sg = new Set(p.variants.map(v => v.seg).filter(Boolean));
+                if (sg.size === 1) p.cat = [...sg][0]; else if (sg.size > 1) p.cat = 'Unisex';
+                if (!DB.cats.includes(p.cat)) DB.cats.push(p.cat);
+            });
+            const total = XL.items.length; XL = null;
+            save(); closeTopModal(); renderView(); renderSide();
+            toast(`تم الاستيراد: ${nNew} جديد، ${total - nNew} تحديث — اطبع الملصقات من "ملصقات الكل"`);
+        };
+        function xlSheet(list) {
+            const N = (v, z) => ({ t: 'n', v, z }), F = (f, v, z) => ({ t: 'n', f, v, z }), M = '#,##0.00', aoa = [XL_HEAD];
+            list.forEach((x, i) => {
+                const r = i + 2, tc = x.qty * x.cost, es = x.qty * x.price;
+                aoa.push([x.sku, x.style, x.name, x.seg, x.color, x.size, N(x.qty), N(x.cost, M), F(`G${r}*H${r}`, tc, M), N(x.price, M), F(`G${r}*J${r}`, es, M), F(`K${r}-I${r}`, es - tc, M), F(`IF(K${r}=0,0,L${r}/K${r})`, es ? (es - tc) / es : 0, '0%'), String(x.barcode || ''), x.note || '']);
+            });
+            if (list.length) {
+                const e = list.length + 1, t = list.length + 2, sq = list.reduce((a, x) => a + x.qty, 0), stc = list.reduce((a, x) => a + x.qty * x.cost, 0), ses = list.reduce((a, x) => a + x.qty * x.price, 0);
+                aoa.push(['Total', '', '', '', '', '', F(`SUM(G2:G${e})`, sq), '', F(`SUM(I2:I${e})`, stc, M), '', F(`SUM(K2:K${e})`, ses, M), F(`SUM(L2:L${e})`, ses - stc, M), F(`IF(K${t}=0,0,L${t}/K${t})`, ses ? (ses - stc) / ses : 0, '0%'), '', '']);
+            }
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+            ws['!cols'] = [22, 9, 40, 10, 14, 10, 7, 11, 12, 12, 14, 13, 9, 16, 24].map(w => ({ wch: w }));
+            return ws;
+        }
+        function xlSave(ws, name) { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Products'); XLSX.writeFile(wb, name); }
+        ACT.xlExport = () => {
+            if (!can('cost')) return toast('التصدير بيحتاج صلاحية رؤية التكلفة', 'err');
+            const list = []; DB.products.forEach(p => p.variants.forEach(v => list.push({ sku: v.sku || '', style: p.style || '', name: p.name, seg: v.seg || p.cat, color: v.color, size: v.size, qty: v.qty, cost: p.cost, price: p.price, barcode: v.barcode, note: v.note || '' })));
+            if (!list.length) return toast('مفيش منتجات للتصدير', 'warn');
+            xlSave(xlSheet(list), 'tiana-products-' + ymd(new Date()) + '.xlsx');
+        };
+        ACT.xlTemplate = () => xlSave(xlSheet([{ sku: 'TIA-ST19-G-PNK-OS', style: 'ST-19', name: 'Knitted Beanie, Booties, and Mittens Set', seg: 'Girls', color: 'Pink', size: 'One Size', qty: 10, cost: 236.92, price: 568.6, barcode: '', note: '' }]), 'tiana-import-template.xlsx');
+        ACT.labelsAll = () => {
+            let html = '<div style="display:flex;flex-wrap:wrap;gap:3mm">', n = 0;
+            DB.products.forEach(p => p.variants.forEach(v => { for (let k = 0; k < Math.min(Math.max(v.qty, 0), 200); k++) { html += labelHTML(p, v); n++; } }));
+            if (!n) return toast('مفيش كميات للطباعة', 'warn');
+            if (n > 400 && !confirm('هيتطبع ' + n + ' ملصق. متأكد؟')) return;
+            printHTML(html + '</div>');
+        };
+        const FBS = { db: null, on: false, ready: false, busy: false, again: false, timer: null, h: {} };
+        const COLS = ['products', 'invoices', 'returns', 'orders', 'movements'];
+        const H = o => JSON.stringify(o, (k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.keys(v).sort().reduce((a, x) => (a[x] = v[x], a), {}) : v);
+        const clone = o => JSON.parse(JSON.stringify(o));
+        const metaList = () => [['settings', DB.settings], ['landing', DB.landing], ['roles', DB.roles], ['users', DB.users], ['cats', DB.cats]];
+
+        function setSync(s) {
+            const el = $('#syncLbl'); if (!el) return;
+            el.textContent = { sync: '⏳ جاري المزامنة…', ok: '☁️ متزامن', err: '⚠️ غير متزامن', off: '📴 محلي فقط' }[s] || '';
+        }
+        function fbInit() {
+            try { firebase.initializeApp(FB_CONFIG); FBS.db = firebase.firestore(); FBS.on = true; }
+            catch (e) { console.error(e); FBS.on = false; }
+        }
+        function fbSchedule() {
+            if (!FBS.on || !FBS.ready) return;
+            clearTimeout(FBS.timer); FBS.timer = setTimeout(fbPush, 500);
+        }
+
+        /* رفع أي تغيير (مقارنة بصمة لكل مستند — بيكتب المتغير بس) */
+        async function fbPush() {
+            if (!FBS.on || !FBS.ready) return;
+            if (FBS.busy) { FBS.again = true; return; }
+            FBS.busy = true; setSync('sync');
+            try {
+                const ops = [];
+                COLS.forEach(c => {
+                    const seen = new Set();
+                    (DB[c] || []).forEach(x => {
+                        const k = c + '/' + x.id, h = H(x); seen.add(k);
+                        if (FBS.h[k] !== h) ops.push({ k, h, ref: FBS.db.collection(c).doc(x.id), data: clone(x) });
+                    });
+                    Object.keys(FBS.h).forEach(k => {
+                        if (k.startsWith(c + '/') && !seen.has(k)) ops.push({ k, del: true, ref: FBS.db.collection(c).doc(k.slice(c.length + 1)) });
+                    });
+                });
+                metaList().forEach(([n, v]) => {
+                    const k = 'meta/' + n, h = H(v);
+                    if (FBS.h[k] !== h) ops.push({ k, h, ref: FBS.db.collection('meta').doc(n), data: { v: clone(v) } });
+                });
+                for (let i = 0; i < ops.length; i += 400) {
+                    const part = ops.slice(i, i + 400), b = FBS.db.batch();
+                    part.forEach(o => o.del ? b.delete(o.ref) : b.set(o.ref, o.data));
+                    await b.commit();
+                    part.forEach(o => o.del ? delete FBS.h[o.k] : (FBS.h[o.k] = o.h));
+                }
+                setSync('ok');
+            } catch (e) {
+                console.error(e); setSync('err'); toast('تعذر المزامنة مع Firebase — هيحاول تاني', 'err');
+                setTimeout(fbSchedule, 8000);
+            } finally {
+                FBS.busy = false; if (FBS.again) { FBS.again = false; fbSchedule(); }
+            }
+        }
+
+        /* تحميل كل البيانات من Firebase (المنتجات + الفواتير + ...) */
+        async function fbLoad() {
+            const db = FBS.db, meta = {};
+            (await db.collection('meta').get()).forEach(d => { meta[d.id] = d.data().v; });
+            if (!meta.settings) return null;                      // أول مرة: Firebase فاضي
+            const D = { settings: meta.settings, landing: meta.landing || {}, roles: meta.roles, users: meta.users, cats: meta.cats || [] };
+            for (const c of COLS) {
+                let q = db.collection(c); if (c === 'movements') q = q.orderBy('date', 'desc').limit(500);
+                const s = await q.get(); D[c] = []; s.forEach(d => D[c].push(d.data()));
+                D[c].forEach(x => { FBS.h[c + '/' + x.id] = H(x); });
+            }
+            ['invoices', 'returns', 'orders', 'movements'].forEach(c => D[c].sort((a, b) => b.date.localeCompare(a.date)));
+            D.products.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+            Object.entries(meta).forEach(([n, v]) => { FBS.h['meta/' + n] = H(v); });
+            return D;
+        }
+
+        /* تحديثات لحظية من أجهزة تانية (أوردرات اللاندنج / المخزون / الفواتير) */
+        function fbListen() {
+            ['products', 'orders', 'invoices'].forEach(c => {
+                FBS.db.collection(c).onSnapshot(snap => {
+                    let ch = false;
+                    snap.docChanges().forEach(d => {
+                        if (d.doc.metadata.hasPendingWrites) return;
+                        const x = d.doc.data(), k = c + '/' + d.doc.id, arr = DB[c], i = arr.findIndex(y => y.id === d.doc.id);
+                        if (d.type === 'removed') { if (i >= 0) { arr.splice(i, 1); ch = true; } delete FBS.h[k]; return; }
+                        const h = H(x); if (FBS.h[k] === h) return;
+                        FBS.h[k] = h; if (i >= 0) arr[i] = x; else arr.push(x);
+                        const n = parseInt(String(x.id).split('-')[1], 10), cn = DB.settings.counters;
+                        if (c === 'invoices' && n > cn.inv) cn.inv = n;
+                        if (c === 'orders' && n > cn.ord) cn.ord = n;
+                        ch = true;
+                    });
+                    if (ch) {
+                        if (c !== 'products') arr_sort(DB[c]);
+                        try { localStorage.setItem(KEY, JSON.stringify(DB)); } catch (e) { }
+                        fbRefresh();
+                    }
+                }, e => console.error(e));
+            });
+        }
+        const arr_sort = a => a.sort((x, y) => y.date.localeCompare(x.date));
+        function fbRefresh() {
+            if (!USER) return; renderSide();
+            const busy = $('#modalRoot .modal') || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+            if (!busy && ['dashboard', 'orders', 'stock', 'products', 'invoices'].includes(PAGE)) renderView();
+        }
+        async function fbWipe() {
+            for (const c of [...COLS, 'meta']) {
+                const s = await FBS.db.collection(c).get(); let b = FBS.db.batch(), n = 0;
+                for (const d of s.docs) { b.delete(d.ref); if (++n % 400 === 0) { await b.commit(); b = FBS.db.batch(); } }
+                await b.commit();
+            }
+        }
+        async function init() {
+            $('#loginView').classList.remove('hidden');
+            $('#loginView').innerHTML = '<div class="min-h-full flex items-center justify-center text-stone-500 font-bold p-10">جاري التحميل من Firebase…</div>';
+            fbInit(); const local = loadDB();
+            if (FBS.on) {
+                try {
+                    const D = await fbLoad();
+                    if (D) { DB = D; migrate(); FBS.ready = true; }
+                    else { DB = local; if (!DB) seed(); migrate(); FBS.ready = true; await fbPush(); }   // أول رفع للبيانات
+                    fbListen();
+                } catch (e) {
+                    console.error(e); DB = local; if (!DB) seed(); migrate(); FBS.ready = false;       // أوفلاين: متكتبش فوق Firebase
+                    toast('تعذر الاتصال بـ Firebase — الشغل محلي مؤقتاً', 'warn');
+                }
+            } else { DB = local; if (!DB) seed(); else migrate(); }
             let id = null; try { id = sessionStorage.getItem('tiana_u'); } catch (e) { }
             const u = id && DB.users.find(x => x.id === id && x.active);
             if (u) { USER = u; enterApp(); } else showLogin();
+            setSync(FBS.ready ? 'ok' : 'off');
         }
         init();
-
+        ACT.resetAll = async () => {
+            if (!confirm('سيتم مسح كل البيانات (المنتجات والفواتير والطلبات...) محلياً وعلى Firebase والبدء بنظام فاضي. متأكد؟')) return;
+            try { if (FBS.on && FBS.ready) await fbWipe(); localStorage.removeItem(KEY); sessionStorage.clear(); } catch (e) { }
+            location.reload();
+        };
     </script>
 </body>
 
