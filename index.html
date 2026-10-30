@@ -1393,7 +1393,7 @@
                     if (mode === 'add') { if (r.qty > 0) moveStock(p, v, r.qty, 'receive', 'استيراد إكسل'); }
                     else { const d = r.qty - v.qty; if (d) moveStock(p, v, d, 'adjust', 'استيراد إكسل'); }
                 } else {
-                    p = DB.products.find(x => (x.style || '') === r.style && x.name === r.name && x.cost === r.cost && x.price === r.price);
+                    p = DB.products.find(x => x.name === r.name && x.cost === r.cost && x.price === r.price);
                     if (!p) { p = { id: 'p' + uid(), name: r.name, style: r.style, cat: r.seg || 'عام', cost: r.cost, price: r.price, emoji: '👗', img: '', minStock: S().lowStock, desc: '', published: true, featured: false, variants: [] }; DB.products.push(p); }
                     v = { id: 'v' + uid(), sku: r.sku, size: r.size, color: r.color, seg: r.seg, note: r.note, qty: 0, barcode: r.barcode || newBarcode() };
                     p.variants.push(v); if (r.qty > 0) moveStock(p, v, r.qty, 'open', 'استيراد إكسل'); nNew++;
@@ -1430,7 +1430,7 @@
             if (!list.length) return toast('مفيش منتجات للتصدير', 'warn');
             xlSave(xlSheet(list), 'tiana-products-' + ymd(new Date()) + '.xlsx');
         };
-        ACT.xlTemplate = () => xlSave(xlSheet([{ sku: 'TIA-ST19-G-PNK-OS', style: 'ST-19', name: 'Knitted Beanie, Booties, and Mittens Set', seg: 'Girls', color: 'Pink', size: 'One Size', qty: 10, cost: 236.92, price: 568.6, barcode: '', note: '' }]), 'tiana-import-template.xlsx');
+        ACT.xlTemplate = () => xlSave(xlSheet([{ sku: '19-01', style: 'TIA-ST19-G-PNK-OS', name: 'Knitted Beanie, Booties, and Mittens Set', seg: 'Girls', color: 'Pink', size: 'One Size', qty: 10, cost: 236.92, price: 568.6, barcode: '', note: '' }]), 'tiana-import-template.xlsx');
         ACT.labelsAll = () => {
             let html = '<div style="display:flex;flex-wrap:wrap;gap:3mm">', n = 0;
             DB.products.forEach(p => p.variants.forEach(v => { for (let k = 0; k < Math.min(Math.max(v.qty, 0), 200); k++) { html += labelHTML(p, v); n++; } }));
@@ -1551,20 +1551,21 @@
                 await b.commit();
             }
         }
-        const withTimeout = (p, ms = 10000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Firebase timeout')), ms))]);
+        const withTimeout = (p, ms = 30000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Firebase timeout')), ms))]);
         async function init() {
             $('#loginView').classList.remove('hidden');
             $('#loginView').innerHTML = '<div class="min-h-full flex items-center justify-center text-stone-500 font-bold p-10">جاري التحميل من Firebase…</div>';
             fbInit(); const local = loadDB();
             if (FBS.on) {
                 try {
+                    await fbAuthGate();
                     const D = await withTimeout(fbLoad());
                     if (D) { DB = D; migrate(); FBS.ready = true; }
                     else { DB = local; if (!DB) seed(); migrate(); FBS.ready = true; fbPush(); }   // أول رفع للبيانات (من غير انتظار)
                     fbListen();
                 } catch (e) {
                     console.error(e); DB = local; if (!DB) seed(); migrate(); FBS.ready = false;   // أوفلاين: متكتبش فوق Firebase
-                    toast('تعذر الاتصال بـ Firebase — الشغل محلي مؤقتاً', 'warn');
+                    toast('تعذر الاتصال بـ Firebase: ' + (e.code || e.message), 'err');
                 }
             } else { DB = local; if (!DB) seed(); else migrate(); }
             let id = null; try { id = sessionStorage.getItem('tiana_u'); } catch (e) { }
