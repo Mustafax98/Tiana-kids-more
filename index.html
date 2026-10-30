@@ -1449,8 +1449,12 @@
             el.textContent = { sync: '⏳ جاري المزامنة…', ok: '☁️ متزامن', err: '⚠️ غير متزامن', off: '📴 محلي فقط' }[s] || '';
         }
         function fbInit() {
-            try { firebase.initializeApp(FB_CONFIG); FBS.db = firebase.firestore(); FBS.on = true; }
-            catch (e) { console.error(e); FBS.on = false; }
+            try {
+                firebase.initializeApp(FB_CONFIG);
+                FBS.db = firebase.firestore();
+                FBS.db.settings({ experimentalForceLongPolling: true, ignoreUndefinedProperties: true });
+                FBS.on = true;
+            } catch (e) { console.error(e); FBS.on = false; }
         }
         function fbSchedule() {
             if (!FBS.on || !FBS.ready) return;
@@ -1547,18 +1551,19 @@
                 await b.commit();
             }
         }
+        const withTimeout = (p, ms = 10000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Firebase timeout')), ms))]);
         async function init() {
             $('#loginView').classList.remove('hidden');
             $('#loginView').innerHTML = '<div class="min-h-full flex items-center justify-center text-stone-500 font-bold p-10">جاري التحميل من Firebase…</div>';
             fbInit(); const local = loadDB();
             if (FBS.on) {
                 try {
-                    const D = await fbLoad();
+                    const D = await withTimeout(fbLoad());
                     if (D) { DB = D; migrate(); FBS.ready = true; }
-                    else { DB = local; if (!DB) seed(); migrate(); FBS.ready = true; await fbPush(); }   // أول رفع للبيانات
+                    else { DB = local; if (!DB) seed(); migrate(); FBS.ready = true; fbPush(); }   // أول رفع للبيانات (من غير انتظار)
                     fbListen();
                 } catch (e) {
-                    console.error(e); DB = local; if (!DB) seed(); migrate(); FBS.ready = false;       // أوفلاين: متكتبش فوق Firebase
+                    console.error(e); DB = local; if (!DB) seed(); migrate(); FBS.ready = false;   // أوفلاين: متكتبش فوق Firebase
                     toast('تعذر الاتصال بـ Firebase — الشغل محلي مؤقتاً', 'warn');
                 }
             } else { DB = local; if (!DB) seed(); else migrate(); }
