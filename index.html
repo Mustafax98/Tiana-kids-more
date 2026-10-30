@@ -356,7 +356,7 @@
                     store: { label: 'أمين مخزن', perms: ['products', 'stock', 'orders', 'dashboard'] }
                 },
                 users: [
-                    { id: 'u1', name: 'mustafa', username: 'mustafa', phone: '01010787452', pin: '123', role: 'owner', active: true },
+                    { id: 'u1', name: 'mustafa', username: 'mustafa', phone: '01010787452', pin: '1234', role: 'owner', active: true },
                     { id: 'u2', name: 'مدير الفرع', username: 'manager', pin: '2222', role: 'manager', active: true },
                     { id: 'u3', name: 'كاشير 1', username: 'cashier', pin: '3333', role: 'cashier', active: true },
                     { id: 'u4', name: 'أمين المخزن', username: 'store', pin: '4444', role: 'store', active: true }
@@ -376,7 +376,7 @@
             const d = DB; d.landing = d.landing || {}; d.landing.show = d.landing.show || { featured: true, products: true, about: true, contact: true };
             d.settings.counters = d.settings.counters || { bc: 0, inv: 1000, ret: 0, ord: 0 };
             const ow = d.users.find(u => u.id === 'u1');
-            if (ow && !ow.phone) Object.assign(ow, { username: 'mustafa', phone: '01010787452', pin: '123' });
+            if (ow && (!ow.phone || ow.pin === '123')) Object.assign(ow, { username: 'mustafa', phone: '01010787452', pin: '1234' });
         }
 
         /* ---------- helpers on data ---------- */
@@ -1149,7 +1149,7 @@
         ACT.roleDel = t => { const r = t.dataset.r; if (DB.users.some(u => u.role === r)) return toast('الدور مستخدم — غيّري دور المستخدمين أولاً', 'warn'); if (!confirm('حذف الدور؟')) return; delete DB.roles[r]; save(); renderView(); };
         ACT.userEdit = t => {
             const u = t.dataset.id ? DB.users.find(x => x.id === t.dataset.id) : { id: '', name: '', username: '', phone: '', pin: '', role: 'cashier', active: true };
-            modal(u.id ? 'تعديل مستخدم' : 'مستخدم جديد', `<div class="grid sm:grid-cols-2 gap-3"><div><label class="lbl">معرّف الدخول (رقم / ID / يوزر) *</label><input id="us_user" class="inp" dir="ltr" value="${esc(u.username)}"></div>
+            modal(u.id ? 'تعديل مستخدم' : 'مستخدم جديد', `<div class="grid sm:grid-cols-2 gap-3"><div><label class="lbl">الاسم *</label><input id="us_name" class="inp" value="${esc(u.name)}"></div><div><label class="lbl">معرّف الدخول (رقم / ID / يوزر) *</label><input id="us_user" class="inp" dir="ltr" value="${esc(u.username)}"></div>
     <div><label class="lbl">الدور</label><select id="us_role" class="inp">${Object.entries(DB.roles).map(([k, r]) => `<option value="${k}" ${k === u.role ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div><div><label class="lbl">الرقم السري (4 أرقام على الأقل) *</label><input id="us_pin" class="inp" inputmode="numeric" value="${esc(u.pin)}"></div>
     <label class="flex items-center gap-2 text-sm">${toggle(u.active, 'id="us_act"')} حساب نشط</label></div>`, { size: 'md', footer: `<button class="btn btn-primary" data-action="userSave" data-id="${u.id}">حفظ</button>` });
         };
@@ -1568,24 +1568,39 @@
             }
         }
         const withTimeout = (p, ms = 30000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Firebase timeout')), ms))]);
+        let PENDING = null;
+        const fbCred = (u, p) => ({
+            email: toLatin(u).trim().toLowerCase().replace(/\s+/g, '') + '@tiana.app',
+            pass: toLatin(p).trim() + 'tiana'
+        });
         function fbAuthGate() {
             return new Promise(resolve => {
-                const auth = firebase.auth();
-                const stop = auth.onAuthStateChanged(u => {
+                const stop = firebase.auth().onAuthStateChanged(u => {
                     if (u) { stop(); resolve(); return; }
                     $('#loginView').classList.remove('hidden');
-                    $('#loginView').innerHTML = `<div class="min-h-full flex items-center justify-center p-4"><div class="card w-full max-w-sm p-6">
-              <div class="font-extrabold text-cocoa text-center mb-4">تسجيل دخول المحل</div>
-              <input id="fbEmail" type="email" class="inp mb-3" placeholder="الإيميل" dir="ltr">
-              <input id="fbPass" type="password" class="inp mb-4" placeholder="الباسورد" dir="ltr" data-enter="fbSignIn">
-              <button class="btn btn-primary w-full" data-action="fbSignIn">دخول</button></div></div>`;
+                    $('#loginView').innerHTML = `<div class="min-h-full flex items-center justify-center p-4"><div class="card w-full max-w-md p-7">
+    <div class="flex justify-center mb-2">${logoHTML('h-24')}</div>
+    <p class="text-center text-xs text-stone-500 mb-6">سجل الدخول للمتابعة</p>
+    <label class="lbl">اسم المستخدم</label>
+    <input id="lgPhone" class="inp mb-3" dir="ltr" placeholder="mustafa" data-enter="fbSignIn">
+    <label class="lbl">الرقم السري</label>
+    <input id="lgPin" type="password" inputmode="numeric" class="inp mb-4" placeholder="••••" data-enter="fbSignIn">
+    <button data-action="fbSignIn" class="btn btn-primary w-full !py-3">دخول</button></div></div>`;
                 });
             });
         }
         ACT.fbSignIn = async () => {
-            try { await firebase.auth().signInWithEmailAndPassword($('#fbEmail').value.trim(), $('#fbPass').value); }
-            catch (e) { console.error(e); toast('تعذر الدخول: ' + (e.code || e.message), 'err'); }
-        }; async function init() {
+            const un = $('#lgPhone').value, pin = $('#lgPin').value;
+            if (!un.trim() || !pin.trim()) return toast('اكتب اسم المستخدم والرقم السري', 'err');
+            const c = fbCred(un, pin);
+            PENDING = { un: toLatin(un).trim().toLowerCase(), pin: toLatin(pin).trim() };
+            try {
+                await firebase.auth().signInWithEmailAndPassword(c.email, c.pass);
+            }
+            catch (e) { PENDING = null; console.error(e); toast('اسم المستخدم أو الرقم السري غير صحيح', 'err'); }
+        };
+
+        async function init() {
             $('#loginView').classList.remove('hidden');
             $('#loginView').innerHTML = '<div class="min-h-full flex items-center justify-center text-stone-500 font-bold p-10">جاري التحميل من Firebase…</div>';
             fbInit(); const local = loadDB();
@@ -1594,16 +1609,18 @@
                     await withTimeout(fbAuthGate(), 600000);
                     const D = await withTimeout(fbLoad());
                     if (D) { DB = D; migrate(); FBS.ready = true; }
-                    else { DB = local; if (!DB) seed(); migrate(); FBS.ready = true; fbPush(); }   // أول رفع للبيانات (من غير انتظار)
+                    else { DB = local; if (!DB) seed(); migrate(); FBS.ready = true; fbPush(); }
                     fbListen();
+                    fbSchedule();
                 } catch (e) {
-                    console.error(e); DB = local; if (!DB) seed(); migrate(); FBS.ready = false;   // أوفلاين: متكتبش فوق Firebase
+                    console.error(e); DB = local; if (!DB) seed(); migrate(); FBS.ready = false;
                     toast('تعذر الاتصال بـ Firebase: ' + (e.code || e.message), 'err');
                 }
             } else { DB = local; if (!DB) seed(); else migrate(); }
             let id = null; try { id = sessionStorage.getItem('tiana_u'); } catch (e) { }
-            const u = id && DB.users.find(x => x.id === id && x.active);
-            if (u) { USER = u; enterApp(); } else showLogin();
+            let u = id && DB.users.find(x => x.id === id && x.active);
+            if (!u && PENDING) u = DB.users.find(x => x.active && (x.username || '').toLowerCase() === PENDING.un && x.pin === PENDING.pin);
+            if (u) { USER = u; try { sessionStorage.setItem('tiana_u', u.id); } catch (e) { } enterApp(); } else showLogin();
             setSync(FBS.ready ? 'ok' : 'off');
         }
         init();
