@@ -346,7 +346,7 @@
             DB = {
                 settings: {
                     store: 'Tiana', tagline: 'Made with love for your little one, Wrapped in love from day one', phone: '01000000000', address: 'القاهرة، مصر', instagram: '@tiana.kids',
-                    currency: 'ج.م', taxRate: 0, lowStock: 3, returnDays: 14, footer: 'شكراً لثقتكم في Tiana 🤍', logo: '',
+                    currency: 'L.E', taxRate: 0, lowStock: 3, returnDays: 14, footer: 'شكراً لثقتكم في Tiana 🤍', logo: '',
                     pay: { cash: { on: true, label: 'نقدي (كاش)', note: '' }, wallet: { on: true, label: 'محفظة إلكترونية', note: '01000000000' }, onlinepayment: { on: true, label: 'تحويل بنكي / انستا', note: '@tiana.kids' } },
                     counters: { bc: 0, inv: 1000, ret: 0, ord: 0 }
                 },
@@ -1185,7 +1185,7 @@
         }
         ACT.setSave = () => {
             const g = id => $('#' + id).value.trim(), s = S();
-            Object.assign(s, { store: g('st_store') || 'Tiana', tagline: g('st_tag'), phone: g('st_phone'), address: g('st_addr'), instagram: g('st_ig'), currency: g('st_cur') || 'ج.م', taxRate: Math.max(0, num(g('st_tax'))), lowStock: Math.max(0, num(g('st_low'))), returnDays: Math.max(0, num(g('st_ret'))), footer: g('st_foot') });
+            Object.assign(s, { store: g('st_store') || 'Tiana', tagline: g('st_tag'), phone: g('st_phone'), address: g('st_addr'), instagram: g('st_ig'), currency: g('st_cur') || 'L.E', taxRate: Math.max(0, num(g('st_tax'))), lowStock: Math.max(0, num(g('st_low'))), returnDays: Math.max(0, num(g('st_ret'))), footer: g('st_foot') });
             Object.keys(s.pay).forEach(k => { s.pay[k].on = $('#st_on_' + k).checked; s.pay[k].label = g('st_lb_' + k) || s.pay[k].label; s.pay[k].note = g('st_nt_' + k); });
             if (!enabledPays().length) { s.pay.cash.on = true; toast('لازم طريقة دفع واحدة على الأقل — تم تفعيل النقدي', 'warn'); }
             save(); renderSide(); renderView(); toast('تم حفظ الإعدادات');
