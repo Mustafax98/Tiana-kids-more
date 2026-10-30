@@ -356,7 +356,7 @@
                     store: { label: 'أمين مخزن', perms: ['products', 'stock', 'orders', 'dashboard'] }
                 },
                 users: [
-                    { id: 'u1', name: 'هاني', username: 'mustafa', phone: '01010787452', pin: '123', role: 'owner', active: true },
+                    { id: 'u1', name: 'mustafa', username: 'mustafa', phone: '01010787452', pin: '123', role: 'owner', active: true },
                     { id: 'u2', name: 'مدير الفرع', username: 'manager', pin: '2222', role: 'manager', active: true },
                     { id: 'u3', name: 'كاشير 1', username: 'cashier', pin: '3333', role: 'cashier', active: true },
                     { id: 'u4', name: 'أمين المخزن', username: 'store', pin: '4444', role: 'store', active: true }
@@ -477,7 +477,7 @@
             $('#loginView').innerHTML = `<div class="min-h-full flex items-center justify-center p-4"><div class="card w-full max-w-md p-7">
     <div class="flex justify-center mb-2">${logoHTML('h-24')}</div>
     <p class="text-center text-xs text-stone-500 mb-6">سجل الدخول للمتابعة</p>
-    <<label class="lbl">المستخدم</label>>
+    <label class="lbl">رقم الموبايل أو اسم المستخدم</label>
     <input id="lgPhone" class="inp mb-3" inputmode="tel" dir="ltr" placeholder="01xxxxxxxxx" data-enter="login">    <label class="lbl">الرقم السري (PIN)</label>
     <input id="lgPin" type="password" inputmode="numeric" class="inp mb-4" placeholder="••••" data-enter="login">
     <button data-action="login" class="btn btn-primary w-full !py-3">دخول</button>
@@ -1406,14 +1406,14 @@
                 let p, v;
                 if (ex) {
                     p = ex.p; v = ex.v;
-                    if (r.name) p.name = r.name; if (r.style) p.style = r.style; if (r.cost > 0) p.cost = r.cost; if (r.price > 0) p.price = r.price;
+                    if (r.name) p.name = r.name; if (r.style) v.style = r.style; if (r.cost > 0) p.cost = r.cost; if (r.price > 0) p.price = r.price;
                     if (r.sku) v.sku = r.sku; if (r.size) v.size = r.size; if (r.color) v.color = r.color; if (r.seg) v.seg = r.seg; if (r.note) v.note = r.note; if (r.barcode) v.barcode = r.barcode;
                     if (mode === 'add') { if (r.qty > 0) moveStock(p, v, r.qty, 'receive', 'استيراد إكسل'); }
                     else { const d = r.qty - v.qty; if (d) moveStock(p, v, d, 'adjust', 'استيراد إكسل'); }
                 } else {
                     p = DB.products.find(x => x.name === r.name && x.cost === r.cost && x.price === r.price);
-                    if (!p) { p = { id: 'p' + uid(), name: r.name, style: r.style, cat: r.seg || 'عام', cost: r.cost, price: r.price, emoji: '👗', img: '', minStock: S().lowStock, desc: '', published: true, featured: false, variants: [] }; DB.products.push(p); }
-                    v = { id: 'v' + uid(), sku: r.sku, size: r.size, color: r.color, seg: r.seg, note: r.note, qty: 0, barcode: r.barcode || newBarcode() };
+                    if (!p) { p = { id: 'p' + uid(), name: r.name, cat: r.seg || 'عام', cost: r.cost, price: r.price, emoji: '👗', img: '', minStock: S().lowStock, desc: '', published: true, featured: false, variants: [] }; DB.products.push(p); }
+                    v = { id: 'v' + uid(), sku: r.sku, style: r.style, size: r.size, color: r.color, seg: r.seg, note: r.note, qty: 0, barcode: r.barcode || newBarcode() };
                     p.variants.push(v); if (r.qty > 0) moveStock(p, v, r.qty, 'open', 'استيراد إكسل'); nNew++;
                 }
                 touched.add(p);
@@ -1444,7 +1444,7 @@
         function xlSave(ws, name) { const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Products'); XLSX.writeFile(wb, name); }
         ACT.xlExport = () => {
             if (!can('cost')) return toast('التصدير بيحتاج صلاحية رؤية التكلفة', 'err');
-            const list = []; DB.products.forEach(p => p.variants.forEach(v => list.push({ sku: v.sku || '', style: p.style || '', name: p.name, seg: v.seg || p.cat, color: v.color, size: v.size, qty: v.qty, cost: p.cost, price: p.price, barcode: v.barcode, note: v.note || '' })));
+            const list = []; DB.products.forEach(p => p.variants.forEach(v => list.push({ sku: v.sku || '', style: v.style || p.style || '', name: p.name,seg: v.seg || p.cat, color: v.color, size: v.size, qty: v.qty, cost: p.cost, price: p.price, barcode: v.barcode, note: v.note || '' })));
             if (!list.length) return toast('مفيش منتجات للتصدير', 'warn');
             xlSave(xlSheet(list), 'tiana-products-' + ymd(new Date()) + '.xlsx');
         };
