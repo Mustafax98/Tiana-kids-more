@@ -8,6 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&family=Sacramento&display=swap"
         rel="stylesheet">
@@ -1552,14 +1553,31 @@
             }
         }
         const withTimeout = (p, ms = 30000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('Firebase timeout')), ms))]);
-        async function fbAuthGate() { }
-        async function init() {
+        function fbAuthGate() {
+            return new Promise(resolve => {
+                const auth = firebase.auth();
+                const stop = auth.onAuthStateChanged(u => {
+                    if (u) { stop(); resolve(); return; }
+                    $('#loginView').classList.remove('hidden');
+                    $('#loginView').innerHTML = `<div class="min-h-full flex items-center justify-center p-4"><div class="card w-full max-w-sm p-6">
+              <div class="font-extrabold text-cocoa text-center mb-4">تسجيل دخول المحل</div>
+              <input id="fbEmail" type="email" class="inp mb-3" placeholder="الإيميل" dir="ltr">
+              <input id="fbPass" type="password" class="inp mb-4" placeholder="الباسورد" dir="ltr" data-enter="fbSignIn">
+              <button class="btn btn-primary w-full" data-action="fbSignIn">دخول</button></div></div>`;
+                });
+            });
+        }
+        ACT.fbSignIn = async () => {
+            try { await firebase.auth().signInWithEmailAndPassword($('#fbEmail').value.trim(), $('#fbPass').value); }
+            catch (e) { toast('بيانات الدخول غير صحيحة', 'err'); }
+        }; async function init() {
             $('#loginView').classList.remove('hidden');
             $('#loginView').innerHTML = '<div class="min-h-full flex items-center justify-center text-stone-500 font-bold p-10">جاري التحميل من Firebase…</div>';
             fbInit(); const local = loadDB();
             if (FBS.on) {
                 try {
                     await fbAuthGate();
+                    await withTimeout(fbAuthGate(), 600000);
                     const D = await withTimeout(fbLoad());
                     if (D) { DB = D; migrate(); FBS.ready = true; }
                     else { DB = local; if (!DB) seed(); migrate(); FBS.ready = true; fbPush(); }   // أول رفع للبيانات (من غير انتظار)
